@@ -71,7 +71,7 @@ pub fn read_fraction<I: Iterator<Item=char>>(mut iter: Peekable<I>,
     }
     iter.next();
 
-    iter.take_while(is_ascii_digit).map(|d|
+    PeekableTakeWhile(&mut iter, is_ascii_digit, true).map(|d|
         d as i64 - '0' as i64
     ).fold((value, 1), |accumulator, d| {
         divisor *= 10f64;
@@ -86,7 +86,7 @@ pub fn read_numbers<I: Iterator<Item=char>>(mut iter: Peekable<I>) -> (Option<i6
         _ => return (None, 0),
     }
 
-    iter.take_while(is_ascii_digit).map(|d| {
+    PeekableTakeWhile(&mut iter, is_ascii_digit, true).map(|d| {
         d as i64 - '0' as i64
     }).fold((Some(0i64), 0), |accumulator, d| {
         let digits = accumulator.0.and_then(|accumulator| {
@@ -147,7 +147,7 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
         let x = spaces.find(',');
         match x {
             Some(val) => println!("Parse Error"),
-            None => println!("No commas"),
+            None => println!("No commas\n"),
         }
 
         // add the counts of spaces that we collect to advance the start index
@@ -272,13 +272,19 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
         let mut density: Option<f64> = None;
         let mut future_compat_h: Option<u32> = None;
         for descriptor in descriptors {
+        	println!("descriptor: {:?}", descriptor);
             let mut char_iter = descriptor.chars();
-            let valid_non_negative_integer = parse_unsigned_integer(char_iter.clone());
-            let has_w = if let Some('w') = char_iter.next() {
+            let mut unsigned_int_chars = char_iter.clone();
+            //println!("unsigned_int_chars: {:?}", unsigned_int_chars);
+            let valid_non_negative_integer = parse_unsigned_integer(&mut unsigned_int_chars);
+            println!("valid_non_negative_integer: {:?}", valid_non_negative_integer);
+            println!("unsigned_int_chars.next: {:?}", unsigned_int_chars.next());
+            let has_w = if let Some('w') = unsigned_int_chars.next() {
                 true
             } else {
                 false
             };
+            println!("has_w: {:?}", has_w);
             let valid_floating_point = parse_double(char_iter.as_str());
             let has_x = if let Some('x') = char_iter.next() {
                 true
@@ -290,7 +296,9 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
             } else {
                 false
             };
+            println!("is ok: {:?}", valid_non_negative_integer.is_ok());
             if valid_non_negative_integer.is_ok() && has_w {
+            	println!("true");
                 //not support sizes attribute
                 if width != None && density != None {
                     error = Error::Yes;
@@ -329,10 +337,11 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
             error = Error::Yes;
         }
         if let Error::No = error {
-            if width != None && density != None {
-   	            let descriptor = Descriptor { wid: width, den: density };
+            if width != None || density != None {
+            	let descriptor = Descriptor { wid: width, den: density };
                 let mut imageSource = ImageSource { url: url, descriptor: descriptor };
                 candidates.push(imageSource);
+                println!("candidates: {:?}",candidates );
             } else {
                 println!("parse error");
             }
@@ -365,6 +374,30 @@ fn do_parse_integer<T: Iterator<Item=char>>(input: T) -> Result<i64, ()> {
     let (value, _) = read_numbers(input);
 
     value.and_then(|value| value.checked_mul(sign)).ok_or(())
+}
+
+struct PeekableTakeWhile<'a, I: Iterator + 'a, F>(&'a mut ::std::iter::Peekable<I>, F, bool);
+
+impl<'a, I: Iterator + 'a, F: FnMut(&I::Item) -> bool> Iterator for PeekableTakeWhile<'a, I, F> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.2 {
+            return None;
+        }
+
+        self.2 = match self.0.peek() {
+            Some(el) => (self.1)(el),
+            None => return None,
+        };
+
+        if self.2 {
+            self.0.next()
+        }
+        else {
+            None
+        }
+    }
 }
 
 /// Parse an integer according to
@@ -415,11 +448,11 @@ pub fn parse_double(string: &str) -> Result<f64, ()> {
 }
 
 #[test]
-fn no_value() {
+/*fn no_value() {
     //println!("{:?}", parse_a_srcset_attribute(String::new()));
     let v = Vec::new();
     assert_eq!(parse_a_srcset_attribute(String::new()), v);
-}
+}*/
 
 #[test]
 fn one_value() {
