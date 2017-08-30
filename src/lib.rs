@@ -126,10 +126,10 @@ pub struct Descriptor {
 }
 
 pub fn collect_sequence_characters<F>(s: &str, predicate: F) -> (&str, &str)
-    where F: Fn(char) -> bool
+    where F: Fn(&char) -> bool
     {
         for (i, ch) in s.chars().enumerate() {
-            if !predicate(ch) {
+            if !predicate(&ch) {
                 return (&s[0..i], &s[i..])
             }
         }
@@ -142,7 +142,7 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
     loop {
         let position = &input[start..];
 
-        let(spaces, position) = collect_sequence_characters(position, |c| c ==',' || char::is_whitespace(c));
+        let(spaces, position) = collect_sequence_characters(position, |c| *c ==',' || char::is_whitespace(*c));
         println!("\nspaces:`{}`, position:`{}`", spaces, position);
         let x = spaces.find(',');
         match x {
@@ -158,7 +158,7 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
         if position.is_empty() {
             return candidates;
         }
-        let(url, spaces) = collect_sequence_characters(position, |c| !char::is_whitespace(c));
+        let(url, spaces) = collect_sequence_characters(position, |c| !char::is_whitespace(*c));
         println!("\nurl:'{}', spaces:'{}'", url, spaces);
         
         // add the counts of urls that we parse to advance the start index
@@ -173,7 +173,7 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
         // add 1 to start index, for the comma
         start += 1;
 
-        let(space, position) = collect_sequence_characters(spaces, |c| char::is_whitespace(c));
+        let(space, position) = collect_sequence_characters(spaces, |c| char::is_whitespace(*c));
         println!("\nspace: `{}`and position: `{}`", spaces, position);
         
         let space_len = space.char_indices().count();
@@ -272,33 +272,26 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
         let mut density: Option<f64> = None;
         let mut future_compat_h: Option<u32> = None;
         for descriptor in descriptors {
-        	println!("descriptor: {:?}", descriptor);
             let mut char_iter = descriptor.chars();
-            let mut unsigned_int_chars = char_iter.clone();
-            //println!("unsigned_int_chars: {:?}", unsigned_int_chars);
-            let valid_non_negative_integer = parse_unsigned_integer(&mut unsigned_int_chars);
-            println!("valid_non_negative_integer: {:?}", valid_non_negative_integer);
-            println!("unsigned_int_chars.next: {:?}", unsigned_int_chars.next());
-            let has_w = if let Some('w') = unsigned_int_chars.next() {
+            let (digits, remaining) = collect_sequence_characters(&descriptor, is_ascii_digit);
+            let valid_non_negative_integer = parse_unsigned_integer(digits.chars());
+            let has_w = if let "w" = remaining {
                 true
             } else {
                 false
             };
-            println!("has_w: {:?}", has_w);
-            let valid_floating_point = parse_double(char_iter.as_str());
-            let has_x = if let Some('x') = char_iter.next() {
+            let valid_floating_point = parse_double(digits);
+            let has_x = if let "x" = remaining {
                 true
             } else {
                 false
             };
-            let has_h = if let Some('h') = char_iter.next() {
+            let has_h = if let "h" = remaining {
                 true
             } else {
                 false
             };
-            println!("is ok: {:?}", valid_non_negative_integer.is_ok());
             if valid_non_negative_integer.is_ok() && has_w {
-            	println!("true");
                 //not support sizes attribute
                 if width != None && density != None {
                     error = Error::Yes;
@@ -341,7 +334,6 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
             	let descriptor = Descriptor { wid: width, den: density };
                 let mut imageSource = ImageSource { url: url, descriptor: descriptor };
                 candidates.push(imageSource);
-                println!("candidates: {:?}",candidates );
             } else {
                 println!("parse error");
             }
@@ -448,18 +440,18 @@ pub fn parse_double(string: &str) -> Result<f64, ()> {
 }
 
 #[test]
-/*fn no_value() {
+fn no_value() {
     //println!("{:?}", parse_a_srcset_attribute(String::new()));
     let v = Vec::new();
     assert_eq!(parse_a_srcset_attribute(String::new()), v);
-}*/
+}
 
 #[test]
 fn one_value() {
-    println!("test: {:?}", parse_a_srcset_attribute(String::from("elva-fairy-320w.jpg 320w, elva-fairy-480w.jpg 480w")));
-    //let d = Descriptor { wid: Some(320), den: None };
-    //let v = ImageSource {url: "elva-fairy-320w.jpg".to_string(), descriptor: d};
-    //let mut sources = Vec::new();
-    //sources.push(v);
-    //assert_eq!(parse_a_srcset_attribute(String::from("elva-fairy-320w.jpg 320w")), sources);
-} 
+    //println!("test: {:?}", parse_a_srcset_attribute(String::from("elva-fairy-320w.jpg 320w, elva-fairy-480w.jpg 480w")));
+    let d = Descriptor { wid: Some(320), den: None };
+    let v = ImageSource {url: "elva-fairy-320w.jpg".to_string(), descriptor: d};
+    let mut sources = Vec::new();
+    sources.push(v);
+    assert_eq!(parse_a_srcset_attribute(String::from("elva-fairy-320w.jpg 320w")), sources);
+}
