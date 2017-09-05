@@ -71,7 +71,7 @@ pub fn read_fraction<I: Iterator<Item=char>>(mut iter: Peekable<I>,
     }
     iter.next();
 
-    PeekableTakeWhile(&mut iter, is_ascii_digit, true).map(|d|
+    iter.take_while(is_ascii_digit).map(|d|
         d as i64 - '0' as i64
     ).fold((value, 1), |accumulator, d| {
         divisor *= 10f64;
@@ -86,7 +86,7 @@ pub fn read_numbers<I: Iterator<Item=char>>(mut iter: Peekable<I>) -> (Option<i6
         _ => return (None, 0),
     }
 
-    PeekableTakeWhile(&mut iter, is_ascii_digit, true).map(|d| {
+    iter.take_while(is_ascii_digit).map(|d| {
         d as i64 - '0' as i64
     }).fold((Some(0i64), 0), |accumulator, d| {
         let digits = accumulator.0.and_then(|accumulator| {
@@ -137,54 +137,40 @@ pub fn collect_sequence_characters<F>(s: &str, predicate: F) -> (&str, &str)
     }
 
 pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
-	let mut start = 0;
+    let mut start = 0;
     let mut candidates: Vec<ImageSource> = Vec::new();
-    loop {
+    while start < input.len() {
         let position = &input[start..];
-
         let(spaces, position) = collect_sequence_characters(position, |c| *c ==',' || char::is_whitespace(*c));
-        println!("\nspaces:`{}`, position:`{}`", spaces, position);
         let x = spaces.find(',');
         match x {
             Some(val) => println!("Parse Error"),
             None => println!("No commas\n"),
         }
-
         // add the counts of spaces that we collect to advance the start index
         let space_len = spaces.char_indices().count();
         start += space_len;
-
         //Returns and breaks out of the loop
         if position.is_empty() {
             return candidates;
         }
         let(url, spaces) = collect_sequence_characters(position, |c| !char::is_whitespace(*c));
-        println!("\nurl:'{}', spaces:'{}'", url, spaces);
-        
         // add the counts of urls that we parse to advance the start index
-        start += url.char_indices().count();
-
+        start += url.chars().count();
         let comma_count = url.chars().rev().take_while(|c| *c == ',').count();
         let url: String = url.chars().take(url.chars().count() - comma_count).collect();
         if comma_count > 1 {
             println!("Parse Error (trailing commas)")
         }
-
         // add 1 to start index, for the comma
         start += 1;
-
         let(space, position) = collect_sequence_characters(spaces, |c| char::is_whitespace(*c));
-        println!("\nspace: `{}`and position: `{}`", spaces, position);
-        
-        let space_len = space.char_indices().count();
+        let space_len = space.len();
         start += space_len;
-
         let mut descriptors = LinkedList::<String>::new();
         let mut current_descriptor = String::new();
         let mut state = ParseState::InDescriptor;
-        println!("\nposition: `{}`", position);
         let mut char_stream = position.chars().enumerate();
-        //let mut last_index = 0;
         let mut buffered: Option<(usize, char)> = None;
         loop {
             let nextChar = buffered.take().or_else(|| char_stream.next());
@@ -195,7 +181,7 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
                 ParseState::InDescriptor => {
                     match nextChar {
                         Some((idx, c @ ' ')) => {
-                            if !current_descriptor.is_empty() { 
+                            if !current_descriptor.is_empty() {
                                 descriptors.push_back(current_descriptor.clone());
                                 current_descriptor = String::new();
                                 state = ParseState::AfterDescriptor;
@@ -266,80 +252,59 @@ pub fn parse_a_srcset_attribute(input: String) -> Vec<ImageSource> {
                 }
             }
         }
-        println!("Descriptors: `{:?}`", descriptors);
-        let mut error = Error::No;
+        let mut error = false;
         let mut width: Option<u32> = None;
         let mut density: Option<f64> = None;
         let mut future_compat_h: Option<u32> = None;
         for descriptor in descriptors {
-            let mut char_iter = descriptor.chars();
+            let char_iter = descriptor.chars();
             let (digits, remaining) = collect_sequence_characters(&descriptor, is_ascii_digit);
             let valid_non_negative_integer = parse_unsigned_integer(digits.chars());
-            let has_w = if let "w" = remaining {
-                true
-            } else {
-                false
-            };
+            let has_w = remaining == "w";
             let valid_floating_point = parse_double(digits);
-            let has_x = if let "x" = remaining {
-                true
-            } else {
-                false
-            };
-            let has_h = if let "h" = remaining {
-                true
-            } else {
-                false
-            };
+            let has_x = remaining == "x";
+            let has_h = remaining == "h";
             if valid_non_negative_integer.is_ok() && has_w {
                 //not support sizes attribute
-                if width != None && density != None {
-                    error = Error::Yes;
-                }
+                error = width.is_some() && density.is_some();
                 let result = parse_unsigned_integer(char_iter.clone());
-                if result.is_err() {
-                    error = Error::Yes;
-                } else {
-                    width = Some(result.unwrap());
+                error = result.is_err();
+                if let Ok(w) = result {
+                    width = Some(w);
                 }
             } else if valid_floating_point.is_ok() && has_x {
-                if width != None && density != None && future_compat_h != None {
-                    error = Error::Yes;
+                if width.is_some() && density.is_some() && future_compat_h.is_some() {
+                    error = true;
                 }
                 let result = parse_double(char_iter.as_str());
-                if result.is_err() {
-                    error = Error::Yes;
-                } else {
-                    density = Some(result.unwrap());
+                error = result.is_err();
+                if let Ok(x) = result {
+                    density = Some(x);
                 }
             } else if valid_non_negative_integer.is_ok() && has_h {
-                if density != None && future_compat_h != None {
-                    error = Error::Yes;
+                if density.is_some() && future_compat_h.is_some() {
+                    error = true;
                 }
                 let result = parse_unsigned_integer(char_iter.clone());
-                if result.is_err() {
-                    error = Error::Yes;
-                } else {
-                    future_compat_h = Some(result.unwrap());
+                error = result.is_err();
+                if let Ok(h) = result {
+                    future_compat_h = Some(h);
                 }
             } else {
-                error = Error::Yes;
+                error = true;
             }
         }
-        if future_compat_h != None && width == None {
-            error = Error::Yes;
+        if future_compat_h.is_some() && width.is_none() {
+            error = true;
         }
-        if let Error::No = error {
-            if width != None || density != None {
-            	let descriptor = Descriptor { wid: width, den: density };
-                let mut imageSource = ImageSource { url: url, descriptor: descriptor };
+        if !error {
+                let descriptor = Descriptor { wid: width, den: density };
+                let imageSource = ImageSource { url: url, descriptor: descriptor };
                 candidates.push(imageSource);
-            } else {
-                println!("parse error");
-            }
+            
         }
-        start -= 1;
     }
+    candidates
 }
 
 /// Shared implementation to parse an integer according to
@@ -366,30 +331,6 @@ fn do_parse_integer<T: Iterator<Item=char>>(input: T) -> Result<i64, ()> {
     let (value, _) = read_numbers(input);
 
     value.and_then(|value| value.checked_mul(sign)).ok_or(())
-}
-
-struct PeekableTakeWhile<'a, I: Iterator + 'a, F>(&'a mut ::std::iter::Peekable<I>, F, bool);
-
-impl<'a, I: Iterator + 'a, F: FnMut(&I::Item) -> bool> Iterator for PeekableTakeWhile<'a, I, F> {
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if !self.2 {
-            return None;
-        }
-
-        self.2 = match self.0.peek() {
-            Some(el) => (self.1)(el),
-            None => return None,
-        };
-
-        if self.2 {
-            self.0.next()
-        }
-        else {
-            None
-        }
-    }
 }
 
 /// Parse an integer according to
